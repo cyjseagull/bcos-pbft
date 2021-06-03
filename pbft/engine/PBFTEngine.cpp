@@ -87,7 +87,7 @@ void PBFTEngine::onRecvProposal(
         m_config->validator()->asyncResetTxsFlag(_proposalData, false);
         return;
     }
-    if (m_timeoutState)
+    if (m_config->isTimeout())
     {
         PBFT_LOG(WARNING) << LOG_DESC("onRecvProposal failed for timout now")
                           << LOG_KV("index", _proposalIndex)
@@ -190,7 +190,7 @@ void PBFTEngine::executeWorker()
     auto messageResult = m_msgQueue->tryPop(c_PopWaitSeconds);
     if (messageResult.first)
     {
-        if (m_timeoutState == true)
+        if (m_config->isTimeout())
         {
             auto pbftMsg = messageResult.second;
             auto packetType = pbftMsg->packetType();
@@ -253,6 +253,18 @@ void PBFTEngine::handleMsg(std::shared_ptr<PBFTBaseMessageInterface> _msg)
     {
         auto checkPointMsg = std::dynamic_pointer_cast<PBFTMessageInterface>(_msg);
         handleCheckPointMsg(checkPointMsg);
+        break;
+    }
+    case PacketType::RecoverRequest:
+    {
+        auto request = std::dynamic_pointer_cast<PBFTMessageInterface>(_msg);
+        handleRecoverRequest(request);
+        break;
+    }
+    case PacketType::RecoverResponse:
+    {
+        auto recoverResponse = std::dynamic_pointer_cast<PBFTMessageInterface>(_msg);
+        handleRecoverResponse(recoverResponse);
         break;
     }
     default:
@@ -490,7 +502,7 @@ bool PBFTEngine::handleCommitMsg(PBFTMessageInterface::Ptr _commitMsg)
 void PBFTEngine::onTimeout()
 {
     Guard l(m_mutex);
-    m_timeoutState.store(true);
+    m_config->setTimeoutState(true);
     // update toView
     m_config->incToView(1);
     // increase the changeCycle
@@ -678,12 +690,7 @@ bool PBFTEngine::handleNewViewMsg(NewViewMsgInterface::Ptr _newViewMsg)
 
 void PBFTEngine::reachNewView()
 {
-    // stop the timer when reach a new-view
-    m_config->timer()->stop();
-    // update the changeCycle
-    m_config->timer()->resetChangeCycle();
-    m_config->setView(m_config->toView());
-    m_timeoutState.store(false);
+    m_config->reachNewView(m_config->toView());
     m_cacheProcessor->resetCacheAfterViewChange(
         m_config->view(), m_config->committedProposal()->index());
     PBFT_LOG(DEBUG) << LOG_DESC("reachNewView") << m_config->printCurrentState();
@@ -763,4 +770,55 @@ bool PBFTEngine::handleCheckPointMsg(std::shared_ptr<PBFTMessageInterface> _chec
     m_cacheProcessor->addCheckPointMsg(_checkPointMsg);
     m_cacheProcessor->checkAndCommitStableCheckPoint();
     return true;
+}
+
+void PBFTEngine::broadcastRecoverRequest()
+{
+    if (!m_config->inRecoverState())
+    {
+        return;
+    }
+    auto recoverReq = m_config->pbftMessageFactory()->createPBFTMsg();
+    recoverReq->setPacketType(PacketType::RecoverRequest);
+    recoverReq->setGeneratedFrom(m_config->nodeIndex());
+    recoverReq->setTimestamp(utcTime());
+    auto encodedData = m_config->codec()->encode(recoverReq);
+    m_config->frontService()->asyncSendMessageByNodeIDs(
+        ModuleID::PBFT, m_config->consensusNodeIDList(), ref(*encodedData));
+    PBFT_LOG(INFO) << LOG_DESC("broadcastRecoverRequest") << m_config->printCurrentState();
+}
+
+void PBFTEngine::handleRecoverResponse(PBFTMessageInterface::Ptr _recoverResponse)
+{
+    if (!m_config->inRecoverState())
+    {
+        return;
+    }
+    if (checkSignature(_recoverResponse) == CheckResult::INVALID)
+    {
+        return;
+    }
+    m_cacheProcessor->addRecoverReqCache(_recoverResponse);
+    m_cacheProcessor->checkAndTryToRecover();
+}
+
+void PBFTEngine::handleRecoverRequest(PBFTMessageInterface::Ptr _request)
+{
+    if (checkSignature(_request) == CheckResult::INVALID)
+    {
+        return;
+    }
+    auto response = m_config->pbftMessageFactory()->createPBFTMsg();
+    response->setGeneratedFrom(m_config->nodeIndex());
+    response->setView(m_config->view());
+    response->setTimestamp(utcTime());
+    response->setIndex(m_config->committedProposal()->index());
+    response->setTimestamp(utcTime());
+    auto encodedData = m_config->codec()->encode(response);
+    m_config->frontService()->asyncSendMessageByNodeID(
+        ModuleID::PBFT, _request->from(), ref(*encodedData), 0, nullptr);
+
+    PBFT_LOG(DEBUG) << LOG_DESC("handleRecoverRequest and response current state")
+                    << LOG_KV("peer", _request->from()->shortHex())
+                    << m_config->printCurrentState();
 }

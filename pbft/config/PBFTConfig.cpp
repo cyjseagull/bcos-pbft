@@ -152,6 +152,34 @@ PBFTProposalInterface::Ptr PBFTConfig::populateCommittedProposal()
         std::dynamic_pointer_cast<PBFTProposalInterface>(m_committedProposal));
 }
 
+void PBFTConfig::reachNewView(ViewType _view)
+{
+    m_timeoutState = false;
+    m_recoverState = false;
+    // stop the timer when reach a new-view
+    m_timer->stop();
+    // update the changeCycle
+    m_timer->resetChangeCycle();
+    setView(_view);
+}
+
+bool PBFTConfig::shouldIntoRecoverState()
+{
+    if (m_recoverState)
+    {
+        return true;
+    }
+    if (!isTimeout())
+    {
+        return false;
+    }
+    if (m_timer->changeCycle() <= 5)
+    {
+        return false;
+    }
+    m_recoverState = true;
+    return true;
+}
 std::string PBFTConfig::printCurrentState()
 {
     std::ostringstream stringstream;

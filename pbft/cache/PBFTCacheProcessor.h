@@ -127,6 +127,9 @@ public:
 
     virtual void resetTimer();
 
+    virtual void addRecoverReqCache(PBFTMessageInterface::Ptr _recoverResponse);
+    virtual bool checkAndTryToRecover();
+
 protected:
     virtual bool checkPrecommitWeight(PBFTMessageInterface::Ptr _precommitMsg);
     virtual void updateCommitQueue(PBFTProposalInterface::Ptr _committedProposal);
@@ -167,6 +170,11 @@ protected:
     std::priority_queue<PBFTProposalInterface::Ptr, std::vector<PBFTProposalInterface::Ptr>,
         PBFTProposalCmp>
         m_stableCheckPointQueue;
+
+    // the recover message cache
+    std::map<ViewType, std::map<IndexType, PBFTMessageInterface::Ptr>> m_recoverReqCache;
+    std::map<ViewType, uint64_t> m_recoverCacheWeight;
+    size_t m_recoverCacheQuorum = 0;
 };
 }  // namespace consensus
 }  // namespace bcos

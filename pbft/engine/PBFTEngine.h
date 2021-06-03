@@ -78,7 +78,7 @@ public:
         bcos::ledger::LedgerConfig::Ptr _ledgerConfig, std::function<void(Error::Ptr)> _onRecv);
 
     virtual std::shared_ptr<PBFTCacheProcessor> cacheProcessor() { return m_cacheProcessor; }
-    virtual bool isTimeout() { return m_timeoutState; }
+    virtual bool isTimeout() { return m_config->isTimeout(); }
 
 protected:
     virtual void onRecvProposal(bytesConstRef _proposalData,
@@ -123,6 +123,11 @@ protected:
     // function called after reaching a consensus
     virtual void finalizeConsensus(std::shared_ptr<bcos::ledger::LedgerConfig> _ledgerConfig);
 
+    // recover related logics
+    virtual void broadcastRecoverRequest();
+    virtual void handleRecoverRequest(std::shared_ptr<PBFTMessageInterface> _request);
+    virtual void handleRecoverResponse(std::shared_ptr<PBFTMessageInterface> _recoverResponse);
+
 private:
     // utility functions
     void waitSignal()
@@ -143,8 +148,6 @@ protected:
     std::shared_ptr<PBFTCacheProcessor> m_cacheProcessor;
     // for log syncing
     PBFTLogSync::Ptr m_logSync;
-    // state variable that identifies whether has timed out
-    std::atomic_bool m_timeoutState = {false};
 
     boost::condition_variable m_signalled;
     boost::mutex x_signalled;
@@ -155,7 +158,7 @@ protected:
     // Message packets allowed to be processed in timeout mode
     const std::set<PacketType> c_timeoutAllowedPacket = {ViewChangePacket, NewViewPacket,
         CommittedProposalRequest, CommittedProposalResponse, PreparedProposalRequest,
-        PreparedProposalResponse};
+        PreparedProposalResponse, RecoverRequest, RecoverResponse};
 };
 }  // namespace consensus
 }  // namespace bcos

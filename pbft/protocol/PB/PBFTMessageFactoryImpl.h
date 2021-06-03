@@ -36,7 +36,6 @@ public:
     using Ptr = std::shared_ptr<PBFTMessageFactoryImpl>;
     PBFTMessageFactoryImpl() = default;
     ~PBFTMessageFactoryImpl() override {}
-
     PBFTMessageInterface::Ptr createPBFTMsg() override { return std::make_shared<PBFTMessage>(); }
 
     ViewChangeMsgInterface::Ptr createViewChangeMsg() override

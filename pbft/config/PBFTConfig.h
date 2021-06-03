@@ -151,6 +151,12 @@ public:
         m_toView = m_view + 1;
         m_timer->resetChangeCycle();
     }
+    virtual void setTimeoutState(bool _timeoutState) { m_timeoutState = _timeoutState; }
+    virtual bool isTimeout() const { return m_timeoutState; }
+    virtual bool inRecoverState() const { return m_recoverState; }
+    virtual bool shouldIntoRecoverState();
+
+    virtual void reachNewView(ViewType _view);
 
     uint64_t maxFaultyQuorum() const { return m_maxFaultyQuorum; }
 
@@ -176,6 +182,10 @@ protected:
     // Timer
     PBFTTimer::Ptr m_timer;
     std::atomic_bool m_leaderSwitchPeriodUpdated = {false};
+    // state variable that identifies whether has timed out
+    std::atomic_bool m_timeoutState = {false};
+    // when the node start, enter recover state to sync the view
+    std::atomic_bool m_recoverState = {true};
 
     std::atomic<uint64_t> m_maxFaultyQuorum = {0};
     std::atomic<uint64_t> m_totalQuorum = {0};

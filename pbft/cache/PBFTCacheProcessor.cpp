@@ -660,3 +660,56 @@ void PBFTCacheProcessor::tryToCommitStableCheckPoint()
         m_config->storage()->asyncCommmitStableCheckPoint(stableCheckPoint);
     }
 }
+
+void PBFTCacheProcessor::addRecoverReqCache(PBFTMessageInterface::Ptr _recoverResponse)
+{
+    auto fromIdx = _recoverResponse->generatedFrom();
+    auto view = _recoverResponse->view();
+    if (m_recoverReqCache.count(view) && m_recoverReqCache[view].count(fromIdx))
+    {
+        return;
+    }
+    m_recoverReqCache[view][fromIdx] = _recoverResponse;
+    // update the weight
+    auto nodeInfo = m_config->getConsensusNodeByIndex(fromIdx);
+    if (!nodeInfo)
+    {
+        return;
+    }
+    if (!m_recoverCacheWeight.count(view))
+    {
+        m_recoverCacheWeight[view] = 0;
+    }
+    m_recoverCacheWeight[view] += nodeInfo->weight();
+    m_recoverCacheQuorum += nodeInfo->weight();
+    return;
+}
+
+bool PBFTCacheProcessor::checkAndTryToRecover()
+{
+    if (!m_config->inRecoverState())
+    {
+        return false;
+    }
+    if (m_recoverCacheQuorum < m_config->minRequiredQuorum())
+    {
+        return false;
+    }
+    for (auto const& it : m_recoverCacheWeight)
+    {
+        // collect enough recover response with the same view
+        if (it.second >= m_config->minRequiredQuorum())
+        {
+            m_config->reachNewView(it.second);
+            PBFT_LOG(DEBUG) << LOG_DESC("checkAndTryToRecover success")
+                            << m_config->printCurrentState();
+            return true;
+        }
+    }
+    // TODO: with no 2*f+1 similar response
+    // if {f+1} nodes view larger than the current view, stay the current view
+    // else: set the current view to the median view
+    // send ViewChange message
+    // remove the cache
+    return true;
+}
