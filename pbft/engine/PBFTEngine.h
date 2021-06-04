@@ -107,6 +107,7 @@ protected:
     virtual bool handleCommitMsg(std::shared_ptr<PBFTMessageInterface> _commitMsg);
 
     virtual void onTimeout();
+    virtual void onViewChangeTimeout();
     virtual void broadcastViewChangeReq();
 
     virtual bool handleViewChangeMsg(std::shared_ptr<ViewChangeMsgInterface> _viewChangeMsg);

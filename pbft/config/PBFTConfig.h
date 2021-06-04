@@ -59,7 +59,10 @@ public:
         m_storage = _storage;
         m_storage->registerConfigResetHandler(
             [this](bcos::ledger::LedgerConfig::Ptr _ledgerConfig) { resetConfig(_ledgerConfig); });
+        // the timer for the normal execution
         m_timer = std::make_shared<PBFTTimer>(consensusTimeout());
+        // the timer for viewchange
+        m_viewChangeTimer = std::make_shared<Timer>(consensusTimeout(), false);
     }
 
     ~PBFTConfig() override {}
@@ -107,6 +110,7 @@ public:
     int64_t highWaterMark() { return m_progressedIndex + m_warterMarkLimit; }
 
     PBFTTimer::Ptr timer() { return m_timer; }
+    Timer::Ptr viewChangeTimer() { return m_viewChangeTimer; }
 
     void setConsensusTimeout(uint64_t _consensusTimeout) override
     {
@@ -175,6 +179,7 @@ protected:
     PBFTStorage::Ptr m_storage;
     // Timer
     PBFTTimer::Ptr m_timer;
+    PBFTTimer::Ptr m_viewChangeTimer;
     std::atomic_bool m_leaderSwitchPeriodUpdated = {false};
 
     std::atomic<uint64_t> m_maxFaultyQuorum = {0};

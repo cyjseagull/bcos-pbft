@@ -365,16 +365,18 @@ PBFTMessageList PBFTCacheProcessor::generatePrePrepareMsg(
 
 NewViewMsgInterface::Ptr PBFTCacheProcessor::checkAndTryIntoNewView()
 {
+    if (m_viewChangeWeight[toView] < m_config->minRequiredQuorum())
+    {
+        return nullptr;
+    }
+    // collect enough viewChangeRequest, start the viewChangeTimer
+    m_viewChangeTimer->start();
     if (m_newViewGenerated || !m_config->leaderAfterViewChange())
     {
         return nullptr;
     }
     auto toView = m_config->toView();
     if (!m_viewChangeWeight.count(toView))
-    {
-        return nullptr;
-    }
-    if (m_viewChangeWeight[toView] < m_config->minRequiredQuorum())
     {
         return nullptr;
     }

@@ -487,6 +487,8 @@ bool PBFTEngine::handleCommitMsg(PBFTMessageInterface::Ptr _commitMsg)
     return true;
 }
 
+void PBFTEngine::onViewChangeTimeout() {}
+
 void PBFTEngine::onTimeout()
 {
     Guard l(m_mutex);
