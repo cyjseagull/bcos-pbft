@@ -49,7 +49,7 @@ public:
 
     virtual ~PBFTCacheProcessor() {}
     virtual void initState(
-        PBFTProposalList const& _committedProposals, bcos::crypto::NodeIDPtr _fromNode = nullptr);
+        PBFTProposalList const& _committedProposals, bcos::crypto::NodeIDPtr _fromNode);
 
     virtual void addPrePrepareCache(PBFTMessageInterface::Ptr _prePrepareMsg);
     virtual bool existPrePrepare(PBFTMessageInterface::Ptr _prePrepareMsg);

@@ -69,9 +69,9 @@ public:
     virtual void onReceivePBFTMessage(bcos::Error::Ptr _error, std::string const& _id,
         bcos::crypto::NodeIDPtr _nodeID, bytesConstRef _data);
 
-    virtual void initState(PBFTProposalList const& _proposals)
+    virtual void initState(PBFTProposalList const& _proposals, bcos::crypto::NodeIDPtr _fromNode)
     {
-        m_cacheProcessor->initState(_proposals);
+        m_cacheProcessor->initState(_proposals, _fromNode);
     }
 
     virtual void asyncNotifyNewBlock(
@@ -149,6 +149,8 @@ protected:
     virtual void onProposalApplySuccess(
         PBFTProposalInterface::Ptr _proposal, PBFTProposalInterface::Ptr _executedProposal);
     virtual void onProposalApplyFailed(PBFTProposalInterface::Ptr _proposal);
+
+    virtual void resetSealedTxs(std::shared_ptr<PBFTMessageInterface> _prePrepareMsg);
 
 private:
     // utility functions

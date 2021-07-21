@@ -107,6 +107,30 @@ void PBFTConfig::reNotifySealer(bcos::protocol::BlockNumber _index)
     notifySealer(_index);
 }
 
+void PBFTConfig::notifyResetSealing()
+{
+    // only notify the non-leader to reset sealing
+    auto currentLeader = leaderIndex(progressedIndex());
+    if (currentLeader == nodeIndex())
+    {
+        return;
+    }
+    if (!m_sealerResetNotifier)
+    {
+        return;
+    }
+    PBFT_LOG(INFO) << LOG_DESC("notifyResetSealing") << printCurrentState();
+    m_sealerResetNotifier([](Error::Ptr _error) {
+        if (_error)
+        {
+            PBFT_LOG(INFO) << LOG_DESC("notifyResetSealing failed")
+                           << LOG_KV("code", _error->errorCode())
+                           << LOG_KV("msg", _error->errorMessage());
+            return;
+        }
+        PBFT_LOG(INFO) << LOG_DESC("notifyResetSealing success");
+    });
+}
 void PBFTConfig::notifySealer(BlockNumber _progressedIndex, bool _enforce)
 {
     auto currentLeader = leaderIndex(_progressedIndex);

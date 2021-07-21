@@ -38,25 +38,10 @@ void PBFTCacheProcessor::initState(PBFTProposalList const& _proposals, NodeIDPtr
 void PBFTCacheProcessor::loadAndVerifyProposal(
     NodeIDPtr _fromNode, PBFTProposalInterface::Ptr _proposal)
 {
-    // the local proposal
-    if (_fromNode == nullptr)
-    {
-        updateCommitQueue(_proposal);
-        return;
-    }
     // Note: to fetch the remote proposal(the from node hits all transactions)
     auto self = std::weak_ptr<PBFTCacheProcessor>(shared_from_this());
     m_config->validator()->verifyProposal(
         _fromNode, _proposal, [self, _fromNode, _proposal](Error::Ptr _error, bool _verifyResult) {
-            if (_error || !_verifyResult)
-            {
-                PBFT_LOG(WARNING) << LOG_DESC("loadAndVerifyProposal failed")
-                                  << LOG_KV("from", _fromNode->shortHex())
-                                  << LOG_KV("code", _error ? _error->errorCode() : 0)
-                                  << LOG_KV("msg", _error ? _error->errorMessage() : "requestSent")
-                                  << LOG_KV("verifyRet", _verifyResult);
-                return;
-            }
             try
             {
                 auto cache = self.lock();
@@ -64,6 +49,23 @@ void PBFTCacheProcessor::loadAndVerifyProposal(
                 {
                     return;
                 }
+                auto config = cache->m_config;
+                if (_error || !_verifyResult)
+                {
+                    auto waterMark = std::min(config->lowWaterMark(), _proposal->index() - 1);
+                    waterMark = std::max(waterMark, config->progressedIndex());
+                    config->setLowWaterMark(waterMark);
+                    PBFT_LOG(WARNING)
+                        << LOG_DESC("loadAndVerifyProposal failed") << printPBFTProposal(_proposal)
+                        << LOG_KV("from", _fromNode->shortHex())
+                        << LOG_KV("code", _error ? _error->errorCode() : 0)
+                        << LOG_KV("msg", _error ? _error->errorMessage() : "requestSent")
+                        << LOG_KV("verifyRet", _verifyResult)
+                        << LOG_KV("lowWaterMark", config->lowWaterMark());
+                    return;
+                }
+
+
                 PBFT_LOG(INFO) << LOG_DESC("loadAndVerifyProposal success")
                                << LOG_KV("from", _fromNode->shortHex())
                                << printPBFTProposal(_proposal);

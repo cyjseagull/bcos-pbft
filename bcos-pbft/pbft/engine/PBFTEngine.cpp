@@ -201,13 +201,16 @@ void PBFTEngine::onRecvProposal(
     {
         return;
     }
-    if (_proposalIndex <= m_config->committedProposal()->index())
+    // expired proposal
+    if (_proposalIndex <= m_config->committedProposal()->index() ||
+        _proposalIndex < m_config->expectedCheckPoint() ||
+        _proposalIndex < m_config->lowWaterMark())
     {
         PBFT_LOG(WARNING) << LOG_DESC("asyncSubmitProposal failed for invalid index")
                           << LOG_KV("index", _proposalIndex)
                           << LOG_KV("hash", _proposalHash.abridged())
-                          << m_config->printCurrentState();
-        m_config->validator()->asyncResetTxsFlag(_proposalData, false);
+                          << m_config->printCurrentState()
+                          << LOG_KV("lowWaterMark", m_config->lowWaterMark());
         return;
     }
     auto leaderIndex = m_config->leaderIndex(_proposalIndex);
@@ -255,7 +258,11 @@ void PBFTEngine::onRecvProposal(
 
     // handle the pre-prepare packet
     Guard l(m_mutex);
-    handlePrePrepareMsg(pbftMessage, false, false, false);
+    auto ret = handlePrePrepareMsg(pbftMessage, false, false, false);
+    if (!ret)
+    {
+        resetSealedTxs(pbftMessage);
+    }
 }
 
 // receive the new block notification from the sync module
@@ -437,7 +444,8 @@ CheckResult PBFTEngine::checkPBFTMsgState(PBFTMessageInterface::Ptr _pbftReq) co
     {
         return CheckResult::INVALID;
     }
-    if (_pbftReq->index() < m_config->expectedCheckPoint() ||
+    if (_pbftReq->index() < m_config->lowWaterMark() ||
+        _pbftReq->index() < m_config->expectedCheckPoint() ||
         _pbftReq->index() >= m_config->highWaterMark())
     {
         PBFT_LOG(TRACE) << LOG_DESC("checkPBFTMsgState: invalid pbftMsg for invalid index")
@@ -514,6 +522,15 @@ bool PBFTEngine::checkProposalSignature(
         nodeInfo->nodeID(), _proposal->hash(), _proposal->signature());
 }
 
+void PBFTEngine::resetSealedTxs(std::shared_ptr<PBFTMessageInterface> _prePrepareMsg)
+{
+    if (_prePrepareMsg->generatedFrom() != m_config->nodeIndex())
+    {
+        return;
+    }
+    m_config->validator()->asyncResetTxsFlag(_prePrepareMsg->consensusProposal()->data(), false);
+}
+
 bool PBFTEngine::handlePrePrepareMsg(PBFTMessageInterface::Ptr _prePrepareMsg,
     bool _needVerifyProposal, bool _generatedFromNewView, bool _needCheckSignature)
 {
@@ -534,11 +551,6 @@ bool PBFTEngine::handlePrePrepareMsg(PBFTMessageInterface::Ptr _prePrepareMsg,
     auto result = checkPrePrepareMsg(_prePrepareMsg);
     if (result == CheckResult::INVALID)
     {
-        if (!_generatedFromNewView)
-        {
-            m_config->validator()->asyncResetTxsFlag(
-                _prePrepareMsg->consensusProposal()->data(), false);
-        }
         return false;
     }
     if (!_generatedFromNewView)
@@ -552,8 +564,6 @@ bool PBFTEngine::handlePrePrepareMsg(PBFTMessageInterface::Ptr _prePrepareMsg,
                                    "handlePrePrepareMsg: invalid packet for not from the leader")
                             << printPBFTMsgInfo(_prePrepareMsg) << m_config->printCurrentState()
                             << LOG_KV("expectedLeader", expectedLeader);
-            m_config->validator()->asyncResetTxsFlag(
-                _prePrepareMsg->consensusProposal()->data(), false);
             return false;
         }
         if (_needCheckSignature)
@@ -562,8 +572,6 @@ bool PBFTEngine::handlePrePrepareMsg(PBFTMessageInterface::Ptr _prePrepareMsg,
             result = checkSignature(_prePrepareMsg);
             if (result == CheckResult::INVALID)
             {
-                m_config->validator()->asyncResetTxsFlag(
-                    _prePrepareMsg->consensusProposal()->data(), false);
                 m_config->notifySealer(_prePrepareMsg->index(), true);
                 return false;
             }
@@ -593,11 +601,6 @@ bool PBFTEngine::handlePrePrepareMsg(PBFTMessageInterface::Ptr _prePrepareMsg,
     auto leaderNodeInfo = m_config->getConsensusNodeByIndex(_prePrepareMsg->generatedFrom());
     if (!leaderNodeInfo)
     {
-        if (!_generatedFromNewView)
-        {
-            m_config->validator()->asyncResetTxsFlag(
-                _prePrepareMsg->consensusProposal()->data(), false);
-        }
         return false;
     }
     m_config->validator()->verifyProposal(leaderNodeInfo->nodeID(),
@@ -617,8 +620,7 @@ bool PBFTEngine::handlePrePrepareMsg(PBFTMessageInterface::Ptr _prePrepareMsg,
                                       << printPBFTMsgInfo(_prePrepareMsg)
                                       << LOG_KV("errorCode", _error->errorCode())
                                       << LOG_KV("errorMsg", _error->errorMessage());
-                    pbftEngine->m_config->validator()->asyncResetTxsFlag(
-                        _prePrepareMsg->consensusProposal()->data(), false);
+                    pbftEngine->resetSealedTxs(_prePrepareMsg);
                     pbftEngine->m_config->notifySealer(_prePrepareMsg->index(), true);
                     return;
                 }
@@ -627,8 +629,7 @@ bool PBFTEngine::handlePrePrepareMsg(PBFTMessageInterface::Ptr _prePrepareMsg,
                 {
                     PBFT_LOG(WARNING)
                         << LOG_DESC("verify proposal failed") << printPBFTMsgInfo(_prePrepareMsg);
-                    pbftEngine->m_config->validator()->asyncResetTxsFlag(
-                        _prePrepareMsg->consensusProposal()->data(), false);
+                    pbftEngine->resetSealedTxs(_prePrepareMsg);
                     pbftEngine->m_config->notifySealer(_prePrepareMsg->index(), true);
                     return;
                 }
@@ -971,6 +972,7 @@ void PBFTEngine::reachNewView(ViewType _view)
 void PBFTEngine::reHandlePrePrepareProposals(NewViewMsgInterface::Ptr _newViewReq)
 {
     reachNewView(_newViewReq->view());
+    m_config->notifyResetSealing();
     auto const& prePrepareList = _newViewReq->prePrepareList();
     auto maxProposalIndex = m_config->committedProposal()->index();
     for (auto prePrepare : prePrepareList)
